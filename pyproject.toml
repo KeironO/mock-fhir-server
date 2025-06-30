@@ -3,7 +3,7 @@ name = "mock-fhir-server"
 version = "0.1.0"
 description = ""
 authors = [
-    {name = "Ke267079",email = "keiron.oshea@wales.nhs.uk"}
+    {name = "Keiron O'Shea",email = "keiron.oshea@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.13"

@@ -3,6 +3,7 @@ Pytest plugin for FHIR server mocking
 """
 
 import pytest
+
 from .mock_server import MockFHIRServer
 
 

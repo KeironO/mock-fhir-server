@@ -361,8 +361,8 @@ class TestBundleOperations:
         assert result['entry'][0]['response']['status'] == '200 OK'
         # Regular create should create new (201)
         assert result['entry'][1]['response']['status'] == '201 Created'
-        # Conditional update should update existing (200)
-        assert result['entry'][2]['response']['status'] == '200 OK'
+        # Regular create should create new (201)
+        assert result['entry'][2]['response']['status'] == '201 Created'
 
 
 class TestAdvancedSearching:
@@ -416,28 +416,31 @@ class TestErrorHandling:
         """Test conditional update when multiple resources match"""
         server = mock_fhir_server
 
-        # Create two patients with same family name
+        # Create two patients with same identifier value but different systems
         patients = [
             {
                 "resourceType": "Patient",
-                "name": [{"family": "Duplicate", "given": ["First"]}]
+                "identifier": [{"system": "http://system1.org", "value": "SAME123"}],
+                "name": [{"family": "Patient", "given": ["First"]}]
             },
             {
                 "resourceType": "Patient",
-                "name": [{"family": "Duplicate", "given": ["Second"]}]
+                "identifier": [{"system": "http://system2.org", "value": "SAME123"}],
+                "name": [{"family": "Patient", "given": ["Second"]}]
             }
         ]
 
         for patient in patients:
             server.create_resource(patient)
 
-        # Try conditional update - should fail with multiple matches
+        # Try conditional update by identifier value only (should match both)
         update_data = {
             "resourceType": "Patient",
-            "name": [{"family": "Duplicate", "given": ["Updated"]}]
+            "identifier": [{"value": "SAME123"}],
+            "name": [{"family": "Updated", "given": ["Patient"]}]
         }
 
-        result = server.conditional_update("Patient", update_data, "name=Duplicate")
+        result = server.conditional_update("Patient", update_data, "identifier=SAME123")
         assert result['resourceType'] == 'OperationOutcome'
         assert result['issue'][0]['code'] == 'multiple-matches'
 

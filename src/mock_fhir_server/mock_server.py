@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Union
 import pytest
 import requests_mock
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, unquote
 
 from fhir_core.fhirabstractmodel import FHIRAbstractModel
 from fhir.resources import get_fhir_model_class
@@ -84,22 +84,69 @@ class MockFHIRServer:
             self.resources[resource_type] = {}
         return self.resources[resource_type]
 
-    def _find_by_identifier(self, resource_type: str, identifier_system: Optional[str],
-                           identifier_value: str) -> Optional[MockFHIRResource]:
-        """Find a resource by identifier"""
+    def _parse_search_string(self, search_string: str) -> Dict[str, List[str]]:
+        """Parse a search string like 'identifier=system|value&name=Smith' into parameters"""
+        params = {}
+        if not search_string:
+            return params
+
+        # URL decode the search string first
+        search_string = unquote(search_string)
+
+        for param_pair in search_string.split("&"):
+            if "=" in param_pair:
+                key, value = param_pair.split("=", 1)
+                if key not in params:
+                    params[key] = []
+                params[key].append(value)
+        return params
+
+    def _search_by_params(self, resource_type: str, params: Dict[str, List[str]]) -> List[MockFHIRResource]:
+        """Search for resources matching the given parameters"""
         store = self._get_resource_store(resource_type)
+        matching_resources = []
+
+        if not params:
+            # No search parameters, return all
+            return list(store.values())
 
         for resource in store.values():
+            if self._resource_matches_params(resource, params):
+                matching_resources.append(resource)
+
+        return matching_resources
+
+    def _resource_matches_params(self, resource: MockFHIRResource, params: Dict[str, List[str]]) -> bool:
+        """Check if a resource matches the search parameters"""
+        for param_name, param_values in params.items():
+            if param_name == 'identifier':
+                # Handle identifier search
+                if not self._matches_identifier_search(resource, param_values):
+                    return False
+            # For any other search parameters, just return False (not supported)
+            else:
+                return False
+
+        return True
+
+    def _matches_identifier_search(self, resource: MockFHIRResource, identifier_values: List[str]) -> bool:
+        """Check if resource matches identifier search"""
+        for identifier_param in identifier_values:
+            # Parse identifier parameter (system|value or just value)
+            if '|' in identifier_param:
+                system, value = identifier_param.split('|', 1)
+            else:
+                system, value = None, identifier_param
+
             for ident in resource.identifier:
                 if isinstance(ident, dict):
-                    # Check if identifier matches
                     ident_value = ident.get('value')
                     ident_system = ident.get('system')
 
-                    if ident_value == identifier_value:
-                        if identifier_system is None or ident_system == identifier_system:
-                            return resource
-        return None
+                    if ident_value == value:
+                        if system is None or ident_system == system:
+                            return True
+        return False
 
     def create_resource(self, resource_data: Union[Dict[str, Any], FHIRAbstractModel]) -> Dict[str, Any]:
         """Create a new FHIR resource"""
@@ -185,29 +232,22 @@ class MockFHIRServer:
     def conditional_update(self, resource_type: str, resource_data: Union[Dict[str, Any], FHIRAbstractModel],
                           search_criteria: str) -> Dict[str, Any]:
         """Update resource(s) matching search criteria"""
-        print(f"DEBUG: conditional_update called with search_criteria: {search_criteria}")
         search_params = self._parse_search_string(search_criteria)
-        print(f"DEBUG: parsed search_params: {search_params}")
         existing_resources = self._search_by_params(resource_type, search_params)
-        print(f"DEBUG: found {len(existing_resources)} existing resources")
 
         if not existing_resources:
             # No match found, create new resource
-            print("DEBUG: No existing resources found, creating new")
             result = self.create_resource(resource_data)
             result['created'] = True
             return result
         elif len(existing_resources) == 1:
             # Single match, update it
             existing = existing_resources[0]
-            print(f"DEBUG: Found 1 existing resource with ID: {existing.id}, updating it")
             result = self.update_resource(resource_type, existing.id, resource_data)
             result['created'] = False  # This was an update, not a create
-            print(f"DEBUG: Update result created flag: {result.get('created')}")
             return result
         else:
             # Multiple matches - this should be an error in FHIR
-            print(f"DEBUG: Multiple matches found: {len(existing_resources)}")
             return {
                 "resourceType": "OperationOutcome",
                 "issue": [{
@@ -217,66 +257,56 @@ class MockFHIRServer:
                 }]
             }
 
-    def _parse_search_string(self, search_string: str) -> Dict[str, List[str]]:
-        """Parse a search string like 'identifier=system|value&name=Smith' into parameters"""
-        params = {}
-        if not search_string:
-            return params
-
-        for param_pair in search_string.split('&'):
-            if '=' in param_pair:
-                key, value = param_pair.split('=', 1)
-                if key not in params:
-                    params[key] = []
-                params[key].append(value)
-        return params
-
-    def _search_by_params(self, resource_type: str, params: Dict[str, List[str]]) -> List[MockFHIRResource]:
-        """Search for resources matching the given parameters"""
+    def read_resource(self, resource_type: str, resource_id: str,
+                     return_fhir_model: bool = False) -> Optional[Union[Dict[str, Any], FHIRAbstractModel]]:
+        """Read a resource by ID"""
         store = self._get_resource_store(resource_type)
-        matching_resources = []
+        resource = store.get(resource_id)
+
+        if not resource:
+            return None
+
+        if return_fhir_model:
+            return resource.as_fhir_model()
+        else:
+            return resource.as_dict()
+
+    def search_resources(self, resource_type: str, params: Dict[str, List[str]],
+                        return_fhir_models: bool = False) -> Dict[str, Any]:
+        """Search resources with basic parameter support"""
+        store = self._get_resource_store(resource_type)
 
         if not params:
-            # No search parameters, return all
-            return list(store.values())
+            # No search parameters, return all resources
+            matching_resources = list(store.values())
+        else:
+            # Use the internal search method
+            matching_resources = self._search_by_params(resource_type, params)
 
-        for resource in store.values():
-            if self._resource_matches_params(resource, params):
-                matching_resources.append(resource)
-
-        return matching_resources
-
-    def _resource_matches_params(self, resource: MockFHIRResource, params: Dict[str, List[str]]) -> bool:
-        """Check if a resource matches the search parameters"""
-        for param_name, param_values in params.items():
-            if param_name == 'identifier':
-                # Handle identifier search
-                if not self._matches_identifier_search(resource, param_values):
-                    return False
-            # For any other search parameters, just return False (not supported)
+        # Convert to appropriate format
+        result_resources = []
+        for resource in matching_resources:
+            if return_fhir_models:
+                try:
+                    result_resources.append(resource.as_fhir_model().model_dump())
+                except (ImportError, ValueError):
+                    result_resources.append(resource.as_dict())
             else:
-                return False
+                result_resources.append(resource.as_dict())
 
-        return True
-
-    def _matches_identifier_search(self, resource: MockFHIRResource, identifier_values: List[str]) -> bool:
-        """Check if resource matches identifier search"""
-        for identifier_param in identifier_values:
-            # Parse identifier parameter (system|value or just value)
-            if '|' in identifier_param:
-                system, value = identifier_param.split('|', 1)
-            else:
-                system, value = None, identifier_param
-
-            for ident in resource.identifier:
-                if isinstance(ident, dict):
-                    ident_value = ident.get('value')
-                    ident_system = ident.get('system')
-
-                    if ident_value == value:
-                        if system is None or ident_system == system:
-                            return True
-        return False
+        # Create FHIR Bundle response
+        return {
+            "resourceType": "Bundle",
+            "type": "searchset",
+            "total": len(result_resources),
+            "entry": [
+                {
+                    "resource": resource,
+                    "fullUrl": f"{self.base_url}/{resource['resourceType']}/{resource['id']}"
+                }
+                for resource in result_resources
+            ]
+        }
 
     def process_bundle(self, bundle_data: Union[Dict[str, Any], FHIRAbstractModel]) -> Dict[str, Any]:
         """Process a FHIR Bundle with transaction/batch operations"""
@@ -320,16 +350,32 @@ class MockFHIRServer:
                 elif method == 'PUT':
                     # Parse URL to get resource type and ID or search criteria
                     url_parts = url.strip('/').split('/')
-                    if len(url_parts) >= 2:
+                    if len(url_parts) >= 1:
                         resource_type = url_parts[0]
-                        if '?' in url_parts[1]:
-                            # Conditional update
-                            search_criteria = url_parts[1].split('?', 1)[1]
+                        if '?' in url:
+                            # Conditional update - extract search criteria
+                            search_criteria = url.split('?', 1)[1]
                             result = self.conditional_update(resource_type, resource, search_criteria)
-                        else:
+                        elif len(url_parts) >= 2:
                             # Regular update
                             resource_id = url_parts[1]
                             result = self.update_resource(resource_type, resource_id, resource)
+                        else:
+                            # Invalid URL format
+                            response_entries.append({
+                                "response": {
+                                    "status": "400 Bad Request",
+                                    "outcome": {
+                                        "resourceType": "OperationOutcome",
+                                        "issue": [{
+                                            "severity": "error",
+                                            "code": "invalid",
+                                            "diagnostics": f"Invalid URL format: {url}"
+                                        }]
+                                    }
+                                }
+                            })
+                            continue
 
                         status = "201 Created" if result.get('created', False) else "200 OK"
                         response_entries.append({
@@ -340,6 +386,7 @@ class MockFHIRServer:
                             }
                         })
                     else:
+                        # Invalid URL format - no resource type
                         response_entries.append({
                             "response": {
                                 "status": "400 Bad Request",
@@ -354,40 +401,6 @@ class MockFHIRServer:
                             }
                         })
 
-                elif method == 'GET':
-                    # Handle search within bundle
-                    url_parts = url.strip('/').split('/')
-                    if len(url_parts) >= 1:
-                        if '?' in url_parts[0]:
-                            resource_type, query = url_parts[0].split('?', 1)
-                            search_params = self._parse_search_string(query)
-                            results = self._search_by_params(resource_type, search_params)
-
-                            response_entries.append({
-                                "response": {
-                                    "status": "200 OK"
-                                },
-                                "resource": {
-                                    "resourceType": "Bundle",
-                                    "type": "searchset",
-                                    "total": len(results),
-                                    "entry": [{"resource": r.as_dict()} for r in results]
-                                }
-                            })
-                        else:
-                            response_entries.append({
-                                "response": {
-                                    "status": "400 Bad Request",
-                                    "outcome": {
-                                        "resourceType": "OperationOutcome",
-                                        "issue": [{
-                                            "severity": "error",
-                                            "code": "not-supported",
-                                            "diagnostics": "GET operations in bundles require search parameters"
-                                        }]
-                                    }
-                                }
-                            })
                 else:
                     # Unsupported method
                     response_entries.append({
@@ -423,64 +436,6 @@ class MockFHIRServer:
             "resourceType": "Bundle",
             "type": f"{bundle_type}-response",
             "entry": response_entries
-        }
-
-    def read_resource(self, resource_type: str, resource_id: str,
-                     return_fhir_model: bool = False) -> Optional[Union[Dict[str, Any], FHIRAbstractModel]]:
-        """Read a resource by ID"""
-        store = self._get_resource_store(resource_type)
-        resource = store.get(resource_id)
-
-        if not resource:
-            return None
-
-        if return_fhir_model:
-            return resource.as_fhir_model()
-        else:
-            return resource.as_dict()
-
-    def search_resources(self, resource_type: str, params: Dict[str, List[str]],
-                        return_fhir_models: bool = False) -> Dict[str, Any]:
-        """Search resources with basic parameter support"""
-        store = self._get_resource_store(resource_type)
-        matching_resources = []
-
-        # Handle identifier search
-        if 'identifier' in params:
-            identifier_param = params['identifier'][0]
-
-            # Parse identifier parameter (system|value or just value)
-            if '|' in identifier_param:
-                system, value = identifier_param.split('|', 1)
-            else:
-                system, value = None, identifier_param
-
-            resource = self._find_by_identifier(resource_type, system, value)
-            if resource:
-                if return_fhir_models:
-                    matching_resources.append(resource.as_fhir_model().model_dump())
-                else:
-                    matching_resources.append(resource.as_dict())
-        else:
-            # Return all resources if no specific search parameters
-            for resource in store.values():
-                if return_fhir_models:
-                    matching_resources.append(resource.as_fhir_model().model_dump())
-                else:
-                    matching_resources.append(resource.as_dict())
-
-        # Create FHIR Bundle response
-        return {
-            "resourceType": "Bundle",
-            "type": "searchset",
-            "total": len(matching_resources),
-            "entry": [
-                {
-                    "resource": resource,
-                    "fullUrl": f"{self.base_url}/{resource['resourceType']}/{resource['id']}"
-                }
-                for resource in matching_resources
-            ]
         }
 
     def _handle_request(self, request, context):
@@ -561,12 +516,7 @@ class MockFHIRServer:
                 elif parsed_url.query:
                     # Conditional update: PUT /ResourceType?search
                     result = self.conditional_update(resource_type, resource_data, parsed_url.query)
-                    # Check if this was actually a create or update
-                    if result.get('resourceType') == 'OperationOutcome' and result.get('created') is not None:
-                        status_code = 201 if result.get('created', False) else 200
-                    else:
-                        # Error case
-                        status_code = 400
+                    status_code = 201 if result.get('created', False) else 200
                 else:
                     context.status_code = 400
                     error = {
@@ -664,20 +614,3 @@ class MockFHIRServer:
         if self.requests_mock:
             self.requests_mock.stop()
             self.requests_mock = None
-
-
-# Pytest fixtures
-@pytest.fixture
-def mock_fhir_server():
-    """Pytest fixture that provides a MockFHIRServer instance"""
-    server = MockFHIRServer()
-    yield server
-    server.reset()
-
-
-@pytest.fixture
-def fhir_server_with_requests_mock(requests_mock, mock_fhir_server):
-    """Pytest fixture that provides a MockFHIRServer with requests-mock integration"""
-    mock_fhir_server.start_mock(requests_mock)
-    yield mock_fhir_server
-    mock_fhir_server.stop_mock()

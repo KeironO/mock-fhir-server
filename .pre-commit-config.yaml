@@ -64,31 +64,9 @@ repos:
         name: isort (python)
         args: [--profile, black, --line-length, "88"]
 
-  # Optional: Additional security checks
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.4.0
-    hooks:
-      - id: detect-secrets
-        args: ['--baseline', '.secrets.baseline']
-        exclude: package.lock.json
-
 # Configuration for pre-commit
 default_install_hook_types: [pre-commit, pre-push]
-default_stages: [commit]
-
-# You can also specify which hooks to run on push vs commit
-repos:
-  # Lighter checks on every commit
-  - repo: local
-    hooks:
-      - id: ruff-check-fast
-        name: ruff-check-fast
-        entry: ruff check --fix-only
-        language: system
-        types: [python]
-        stages: [commit]
-
-# More thorough checks on push
+default_stages: [pre-commit]
 ci:
   autofix_commit_msg: |
     [pre-commit.ci] auto fixes from pre-commit hooks

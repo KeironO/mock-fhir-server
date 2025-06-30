@@ -2,12 +2,13 @@
 Test configuration and shared fixtures
 """
 
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 # Add the parent directory to the path so tests can import modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from mock_fhir_server.mock_server import MockFHIRServer
 
@@ -33,16 +34,10 @@ def sample_patient_data():
     """Sample patient data for testing"""
     return {
         "resourceType": "Patient",
-        "identifier": [{
-            "system": "http://example.org/mrn",
-            "value": "12345"
-        }],
-        "name": [{
-            "family": "Smith",
-            "given": ["John"]
-        }],
+        "identifier": [{"system": "http://example.org/mrn", "value": "12345"}],
+        "name": [{"family": "Smith", "given": ["John"]}],
         "gender": "male",
-        "birthDate": "1980-01-01"
+        "birthDate": "1980-01-01",
     }
 
 
@@ -53,16 +48,18 @@ def sample_observation_data():
         "resourceType": "Observation",
         "status": "final",
         "code": {
-            "coding": [{
-                "system": "http://loinc.org",
-                "code": "8867-4",
-                "display": "Heart rate"
-            }]
+            "coding": [
+                {
+                    "system": "http://loinc.org",
+                    "code": "8867-4",
+                    "display": "Heart rate",
+                }
+            ]
         },
         "valueQuantity": {
             "value": 80,
             "unit": "beats/minute",
             "system": "http://unitsofmeasure.org",
-            "code": "/min"
-        }
+            "code": "/min",
+        },
     }
