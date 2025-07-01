@@ -7,22 +7,23 @@ Designed specifically for use with fhir-resources library.
 """
 
 import json
-import uuid
 import re
+import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any, Union
-import requests_mock
-from urllib.parse import parse_qs, urlparse, unquote
+from typing import Any, Dict, List, Optional, Union
+from urllib.parse import parse_qs, unquote, urlparse
 
-from fhir_core.fhirabstractmodel import FHIRAbstractModel
+import requests_mock
 from fhir.resources import get_fhir_model_class
+from fhir_core.fhirabstractmodel import FHIRAbstractModel
 
 
 class MockFHIRResource:
     """Represents a FHIR resource with metadata"""
 
-    def __init__(self, resource_data: Union[Dict[str, Any], FHIRAbstractModel]):
-        # Handle fhir-resources model objects
+    def __init__(
+        self, resource_data: Union[Dict[str, Any], FHIRAbstractModel]
+    ) -> None:  # Handle fhir-resources model objects
         if isinstance(resource_data, FHIRAbstractModel):
             self.resource_data = resource_data.model_dump()
             self._fhir_model = resource_data
@@ -52,7 +53,7 @@ class MockFHIRResource:
         meta = {"versionId": self.version_id, "lastUpdated": self.created_at}
         self.resource_data["meta"] = meta
 
-    def as_fhir_model(self):
+    def as_fhir_model(self) -> FHIRAbstractModel:
         """Return the resource as a fhir-resources model object"""
         if self._fhir_model:
             return self._fhir_model
@@ -63,18 +64,18 @@ class MockFHIRResource:
 
     def as_dict(self) -> Dict[str, Any]:
         """Return the resource as a dictionary"""
-        return self.resource_data
+        return self.resource_data  # type: ignore
 
 
 class MockFHIRServer:
     """Mock FHIR server that handles basic FHIR operations"""
 
-    def __init__(self, base_url: str = "http://localhost:8080/fhir"):
+    def __init__(self, base_url: str = "http://localhost:8080/fhir") -> None:
         self.base_url = base_url.rstrip("/")
         self.resources: Dict[str, Dict[str, MockFHIRResource]] = {}
         self.requests_mock = None
 
-    def reset(self):
+    def reset(self) -> None:
         """Clear all stored resources"""
         self.resources.clear()
 
@@ -84,9 +85,11 @@ class MockFHIRServer:
             self.resources[resource_type] = {}
         return self.resources[resource_type]
 
-    def _parse_search_string(self, search_string: str) -> Dict[str, List[str]]:
-        """Parse a search string like 'identifier=system|value&name=Smith' into parameters"""
-        params = {}
+    @staticmethod
+    def _parse_search_string(search_string: str) -> Dict[str, List[str]]:
+        """Parse a search string like 'identifier=system|value&name=Smith' into
+        parameters"""
+        params: Dict[str, List[str]] = {}
         if not search_string:
             return params
 
@@ -133,8 +136,9 @@ class MockFHIRServer:
 
         return True
 
+    @staticmethod
     def _matches_identifier_search(
-        self, resource: MockFHIRResource, identifier_values: List[str]
+        resource: MockFHIRResource, identifier_values: List[str]
     ) -> bool:
         """Check if resource matches identifier search"""
         for identifier_param in identifier_values:
@@ -168,7 +172,10 @@ class MockFHIRServer:
                 {
                     "severity": "information",
                     "code": "informational",
-                    "diagnostics": f"Resource {resource.resource_type}/{resource.id} created successfully",
+                    "diagnostics": (
+                        f"Resource {resource.resource_type}/{resource.id} ",
+                        "created successfully",
+                    ),
                 }
             ],
             "location": f"{self.base_url}/{resource.resource_type}/{resource.id}",
@@ -204,7 +211,10 @@ class MockFHIRServer:
                 {
                     "severity": "information",
                     "code": "informational",
-                    "diagnostics": f"Resource {resource_type}/{resource_id} {'updated' if exists else 'created'} successfully",
+                    "diagnostics": (
+                        f"Resource {resource_type}/{resource_id}",
+                        f"{'updated' if exists else 'created'} successfully",
+                    ),
                 }
             ],
             "location": f"{self.base_url}/{resource_type}/{resource_id}",
@@ -220,9 +230,9 @@ class MockFHIRServer:
         """Create resource only if none exist matching the search criteria"""
         # Extract resource type
         if isinstance(resource_data, dict):
-            resource_type = resource_data.get("resourceType")
+            resource_type: str = resource_data.get("resourceType")  # type: ignore
         else:
-            resource_type = resource_data.resourceType
+            resource_type: str = resource_data.resourceType  # type: ignore
 
         # Parse the if-none-exist search parameters
         search_params = self._parse_search_string(if_none_exist)
@@ -279,7 +289,10 @@ class MockFHIRServer:
                     {
                         "severity": "error",
                         "code": "multiple-matches",
-                        "diagnostics": f"Multiple resources match the search criteria: {len(existing_resources)} found",
+                        "diagnostics": (
+                            "Multiple resources match the search criteria:",
+                            f"{len(existing_resources)} found",
+                        ),
                     }
                 ],
             }
@@ -334,7 +347,10 @@ class MockFHIRServer:
             "entry": [
                 {
                     "resource": resource,
-                    "fullUrl": f"{self.base_url}/{resource['resourceType']}/{resource['id']}",
+                    "fullUrl": (
+                        f"{self.base_url}/{resource['resourceType']}",
+                        f"/{resource['id']}",
+                    ),
                 }
                 for resource in result_resources
             ],
@@ -414,7 +430,10 @@ class MockFHIRServer:
                                                 {
                                                     "severity": "error",
                                                     "code": "invalid",
-                                                    "diagnostics": f"Invalid URL format: {url}",
+                                                    "diagnostics": (
+                                                        "Invalid URL ",
+                                                        f"format: {url}",
+                                                    ),
                                                 }
                                             ],
                                         },
@@ -447,7 +466,10 @@ class MockFHIRServer:
                                             {
                                                 "severity": "error",
                                                 "code": "invalid",
-                                                "diagnostics": f"Invalid URL format: {url}",
+                                                "diagnostics": (
+                                                    "Invalid URL format:",
+                                                    f"{url}",
+                                                ),
                                             }
                                         ],
                                     },
@@ -467,7 +489,10 @@ class MockFHIRServer:
                                         {
                                             "severity": "error",
                                             "code": "not-supported",
-                                            "diagnostics": f"Method {method} not supported",
+                                            "diagnostics": (
+                                                f"Method {method} not ",
+                                                "supported",
+                                            ),
                                         }
                                     ],
                                 },
@@ -486,7 +511,10 @@ class MockFHIRServer:
                                     {
                                         "severity": "error",
                                         "code": "exception",
-                                        "diagnostics": f"Error processing entry: {str(e)}",
+                                        "diagnostics": (
+                                            "Error processing entry:",
+                                            f"{str(e)}",
+                                        ),
                                     }
                                 ],
                             },
@@ -500,7 +528,7 @@ class MockFHIRServer:
             "entry": response_entries,
         }
 
-    def _handle_request(self, request, context):
+    def _handle_request(self, request, context):  # type: ignore
         """Handle HTTP requests to the mock server"""
         method = request.method
         url = request.url
@@ -591,7 +619,10 @@ class MockFHIRServer:
                             {
                                 "severity": "error",
                                 "code": "invalid",
-                                "diagnostics": "PUT requests must include resource ID or search parameters",
+                                "diagnostics": (
+                                    "PUT requests must include resource ID",
+                                    "or search parameters",
+                                ),
                             }
                         ],
                     }
@@ -605,7 +636,7 @@ class MockFHIRServer:
             elif method == "GET" and len(path_parts) == 2:
                 # Read resource: GET /ResourceType/id
                 resource_type, resource_id = path_parts
-                result = self.read_resource(
+                result = self.read_resource(  # type: ignore
                     resource_type, resource_id, return_fhir_model=False
                 )
 
@@ -621,7 +652,10 @@ class MockFHIRServer:
                             {
                                 "severity": "error",
                                 "code": "not-found",
-                                "diagnostics": f"Resource {resource_type}/{resource_id} not found",
+                                "diagnostics": (
+                                    f"Resource {resource_type}/",
+                                    f"{resource_id} not found",
+                                ),
                             }
                         ],
                     }
@@ -676,7 +710,7 @@ class MockFHIRServer:
         context.headers["Content-Type"] = "application/fhir+json"
         return error
 
-    def start_mock(self, requests_mocker):
+    def start_mock(self, requests_mocker) -> None:  # type: ignore
         """Start the mock server using requests-mock"""
         self.requests_mock = requests_mocker
 
@@ -688,8 +722,8 @@ class MockFHIRServer:
             json=self._handle_request,
         )
 
-    def stop_mock(self):
+    def stop_mock(self) -> None:
         """Stop the mock server"""
         if self.requests_mock:
-            self.requests_mock.stop()
+            self.requests_mock.stop()  # type: ignore
             self.requests_mock = None
